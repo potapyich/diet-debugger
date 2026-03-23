@@ -1,0 +1,419 @@
+[
+  {
+    "id": "1.1",
+    "category": "backend",
+    "description": "Create .NET solution with layered architecture: DietDebugger.Api, DietDebugger.Application, DietDebugger.Domain, DietDebugger.Infrastructure. Set up project references (Api→Application→Domain; Infrastructure→Application). Add shared NuGet packages: EF Core, MediatR, FluentValidation.",
+    "context": "Domain must have zero EF Core dependencies. Application owns interfaces; Infrastructure implements them. This structure is enforced via project references — Domain references nothing, Application references only Domain.",
+    "verification": [
+      "dotnet build DietDebugger.sln",
+      "dotnet list DietDebugger.Infrastructure/DietDebugger.Infrastructure.csproj reference | grep -q 'Application'",
+      "dotnet list DietDebugger.Domain/DietDebugger.Domain.csproj reference | wc -l | grep -q '^0$'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "1.2",
+    "category": "database",
+    "description": "Add EF Core with Npgsql provider to Infrastructure project. Configure AppDbContext. Create and apply initial migration. Add health check endpoint (GET /health) that verifies DB connectivity.",
+    "context": "Connection string via DB_CONNECTION_STRING env var with fallback to appsettings.Development.json. Use dotnet-ef tool. Health check should return {status: 'ok', db: 'connected'}.",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'Initial'",
+      "curl -sf http://localhost:5000/health | grep -q '\"status\":\"ok\"'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "1.3",
+    "category": "backend",
+    "description": "Create User entity (Id, Email, PasswordHash, CreatedAt). Implement POST /auth/register, POST /auth/login, POST /auth/refresh. Use BCrypt.Net for password hashing. Store refresh tokens in DB with expiry. Return JWT access token (15min) + refresh token (7 days).",
+    "context": "JWT secret via JWT_SECRET env var. Access token contains userId claim. Refresh tokens are stored in a RefreshTokens table (UserId, Token, ExpiresAt, RevokedAt). On refresh: validate token, revoke old one, issue new pair.",
+    "verification": [
+      "dotnet test --filter 'Category=Auth'",
+      "curl -sf -X POST http://localhost:5000/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"Test1234!\"}' | grep -q 'accessToken'",
+      "curl -sf http://localhost:5000/health/auth -H 'Authorization: Bearer INVALID' | grep -q '401'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "1.4",
+    "category": "frontend",
+    "description": "Create React + Vite project in /client. Set up: React Router v6 with routes (/auth, /day, /week, /analytics, /profile), Axios instance with JWT interceptor (auto-attach Bearer token, auto-refresh on 401), ProtectedRoute wrapper component, global ToastContext (stub — just the context, no UI yet), AuthContext (stores token, user, login/logout methods).",
+    "context": "Use pnpm. Token stored in localStorage. On 401: interceptor calls POST /auth/refresh, retries original request once, then redirects to /auth if refresh also fails. ProtectedRoute redirects unauthenticated users to /auth.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -r 'ProtectedRoute' client/src/router",
+      "grep -r 'Authorization' client/src/lib/axios.ts",
+      "grep -r 'ToastContext' client/src/contexts"
+    ],
+    "passes": false
+  },
+  {
+    "id": "2.1",
+    "category": "database",
+    "description": "Create Meal entity: Id (guid), UserId, LoggedAt, Calories (decimal), ProteinG, FatG, CarbsG, Ingredients (jsonb), PortionEstimate (string), ConfidenceScore (decimal 0-1), Source (enum: Photo/Text/Manual), Notes (nullable string). Add migration and DbContext config.",
+    "context": "Ingredients stored as JSONB array of {name: string, amount: string}. Add index on (UserId, LoggedAt) for date-range queries. Source enum stored as string in DB.",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'AddMeal'",
+      "dotnet test --filter 'Category=MealEntity'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "2.2",
+    "category": "backend",
+    "description": "Define IFoodVisionAgent interface in Application layer: Task<FoodVisionResult> AnalyzeAsync(FoodVisionInput input, CancellationToken ct). FoodVisionInput: either ImageBytes+MimeType or TextDescription. FoodVisionResult: Ingredients[], CaloriesEstimate, ProteinG, FatG, CarbsG, PortionEstimate, Confidence (0-1). Implement against a real vision model (model selected via AI_MODEL_PROVIDER env var: 'openai' or 'claude'). Wrap with 10s timeout. Log prompt+response at Debug level.",
+    "context": "For OpenAI: use GPT-4o with vision. For Claude: use claude-sonnet with vision. Prompt should ask for structured JSON output. Parse response defensively — model may return malformed JSON. Infrastructure project holds the concrete implementations; Application holds only the interface.",
+    "verification": [
+      "dotnet test --filter 'Category=FoodVisionAgent'",
+      "dotnet test --filter 'FoodVisionAgent_LowConfidence_ReturnsBelowThreshold'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "2.3",
+    "category": "backend",
+    "description": "Implement async meal analysis API. POST /meals/analyze: accepts multipart/form-data (image file) or JSON {text: string}, creates AnalysisJob record (Id, UserId, Status, Input, Result, CreatedAt, CompletedAt), enqueues job to in-process IHostedService channel, returns {jobId}. GET /meals/analyze/{jobId}: returns {status: 'pending'|'ready'|'failed', result?: FoodVisionResult, error?: string}. Job processor calls IFoodVisionAgent and updates the record.",
+    "context": "AnalysisJob table: Id (guid), UserId, Status (enum), InputType (Photo/Text), InputData (stored temporarily), Result (jsonb nullable), ErrorMessage (nullable), CreatedAt, CompletedAt. Use System.Threading.Channels for the in-process queue. Job belongs to user — GET endpoint must verify ownership (403 if not owner).",
+    "verification": [
+      "dotnet test --filter 'Category=MealAnalysisApi'",
+      "curl -sf -X POST http://localhost:5000/meals/analyze -H 'Authorization: Bearer $TOKEN' -F 'image=@test_food.jpg' | grep -q 'jobId'",
+      "curl -sf http://localhost:5000/meals/analyze/$JOB_ID -H 'Authorization: Bearer $TOKEN' | grep -q 'status'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "2.4",
+    "category": "backend",
+    "description": "Implement Meal CRUD API: POST /meals (save confirmed meal, returns saved meal + feedback), GET /meals/{id}, PUT /meals/{id}, DELETE /meals/{id} (hard delete), GET /meals?date=YYYY-MM-DD (list for a day, sorted by LoggedAt). All endpoints scoped to authenticated user — return 403 if meal belongs to different user.",
+    "context": "POST /meals body: {loggedAt, calories, proteinG, fatG, carbsG, ingredients, portionEstimate, confidenceScore, source, notes}. GET /meals?date returns array. DELETE returns 204. After POST and PUT: call DailySummaryService.InvalidateAsync (implement as no-op for now, will be wired in Block 3).",
+    "verification": [
+      "dotnet test --filter 'Category=MealCrud'",
+      "dotnet test --filter 'MealApi_OtherUserMeal_Returns403'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "2.5",
+    "category": "backend",
+    "description": "Implement rule-based MealFeedbackAgent in Application layer. Input: saved Meal + DailyTotals (calories/macros so far today) + UserProfile (nullable). Output: FeedbackResult {Status (ok/warning/issue), Insights string[1-2]}. Rules: (1) single meal >40% daily fat quota → warning; (2) meal protein <10g and total daily protein <50% target → warning 'low protein'; (3) meal pushes daily calories >110% target → issue 'over target'; (4) all good → ok. Generic thresholds when no profile: 2000kcal, 50g protein.",
+    "context": "This is pure C# logic — no LLM, no async. Should be fast (<50ms). Called synchronously from POST /meals handler. Insights text should be in English by default (localization deferred to later).",
+    "verification": [
+      "dotnet test --filter 'Category=MealFeedbackAgent'",
+      "dotnet test --filter 'MealFeedback_HighFatMeal_ReturnsWarning'",
+      "dotnet test --filter 'MealFeedback_BalancedMeal_ReturnsOk'",
+      "dotnet test --filter 'MealFeedback_NullProfile_UsesDefaults'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "2.6",
+    "category": "frontend",
+    "description": "Implement add-meal flow on Day tab. FAB '+' button → bottom sheet with 3 options: Take Photo (file input with capture='camera'), Choose from Gallery (file input), Enter Text (textarea + submit). On submit: POST /meals/analyze, show full-screen spinner overlay, poll GET /meals/analyze/{jobId} every 1500ms until status is 'ready' or 'failed'. On failure: show error message with retry button. On ready: navigate to meal result screen.",
+    "context": "Bottom sheet should be accessible (focus trap, ESC to close). File input for camera: <input type='file' accept='image/*' capture='environment'>. Polling: use setInterval, clear on component unmount or completion. Show elapsed time during polling ('Analyzing... 3s') to reduce anxiety.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -r 'capture=' client/src/components/AddMeal",
+      "grep -r 'setInterval' client/src/components/AddMeal",
+      "grep -r 'bottom-sheet' client/src/components"
+    ],
+    "passes": false
+  },
+  {
+    "id": "2.7",
+    "category": "frontend",
+    "description": "Implement meal result screen. Shows: ingredients list (each item editable inline — name and amount), total calories (large, prominent), macro bars (P/F/C in grams), confidence badge (green ≥0.7, yellow 0.4-0.7, red <0.4). If confidence <0.7: yellow banner 'We're not sure — please check or retake the photo'. Save button: POST /meals → on success show FeedbackCard (status icon + insight text) for 3s then navigate to /day. Cancel button: navigate back without saving.",
+    "context": "Ingredients are editable because AI may misidentify. Editing an ingredient should NOT re-trigger AI analysis — just update local state. Calorie/macro values are recalculated client-side when ingredients are edited (use simple proportional scaling from original result). FeedbackCard: green bg for 'ok', yellow for 'warning', red for 'issue'.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -r 'confidence' client/src/components/MealResult",
+      "grep -r 'FeedbackCard' client/src/components",
+      "grep -r 'confidence < 0.7\\|confidence<0.7' client/src/components/MealResult"
+    ],
+    "passes": false
+  },
+  {
+    "id": "3.1",
+    "category": "database",
+    "description": "Create DailySummary entity: Id, UserId, Date (date only, no time), TotalCalories, TotalProteinG, TotalFatG, TotalCarbsG, Insights (jsonb string[]), GeneratedAt, IsStale (bool, default false). Unique constraint on (UserId, Date). Add endpoints: GET /daily-summary?date=YYYY-MM-DD (returns 404 if not generated), POST /daily-summary/invalidate?date=YYYY-MM-DD (sets IsStale=true, returns 200).",
+    "context": "IsStale=true means insights are outdated but data is still valid — UI can show stale insights with a 'outdated' badge while regenerating. The invalidate endpoint is called internally by meal edit/delete handlers.",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'AddDailySummary'",
+      "dotnet test --filter 'Category=DailySummaryEntity'",
+      "curl -sf http://localhost:5000/daily-summary?date=2024-01-01 -H 'Authorization: Bearer $TOKEN' | grep -q '404\\|null'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "3.2",
+    "category": "backend",
+    "description": "Implement DailySummaryAgent (Level 2, LLM). Input: List<Meal> for the day + UserProfile (nullable) + UserGoal (nullable). Output: string[] insights (2-4 items). Prompt asks for honest, direct insights in the user's preferred language. Wire GET /daily-summary to trigger generation when summary is missing or IsStale=true: generate, persist, return. Use per-(userId,date) locking to prevent parallel generation.",
+    "context": "Use SemaphoreSlim keyed by '{userId}:{date}' stored in a ConcurrentDictionary. LLM prompt should include: total calories vs target, macro breakdown, meal timing, user goal. If no profile: use generic analysis. Insights should reference specific meals/patterns from that day, not be generic. Language from UserProfile.PreferredLanguage, default 'en'.",
+    "verification": [
+      "dotnet test --filter 'Category=DailySummaryAgent'",
+      "dotnet test --filter 'DailySummaryAgent_ConcurrentRequests_GeneratesOnce'",
+      "dotnet test --filter 'DailySummaryAgent_StaleFlag_TriggersRegeneration'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "3.3",
+    "category": "backend",
+    "description": "Wire insight invalidation: in PUT /meals/{id} and DELETE /meals/{id} handlers, after successful DB operation, call DailySummaryService.InvalidateAsync(userId, meal.LoggedAt.Date). InvalidateAsync updates IsStale=true on the DailySummary for that date (no-op if no summary exists).",
+    "context": "This completes the cycle: meal edited → day summary invalidated → next GET /daily-summary regenerates. Important: invalidate AFTER the meal change is committed to DB, not before.",
+    "verification": [
+      "dotnet test --filter 'MealUpdate_InvalidatesDailySummary'",
+      "dotnet test --filter 'MealDelete_InvalidatesDailySummary'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "3.4",
+    "category": "frontend",
+    "description": "Implement global Toast component. Position: fixed top-right (16px margin). Auto-dismiss after 4000ms. Manual dismiss via X button. Multiple toasts stack vertically. Types: InsightsReady (blue), PatternAlert (yellow), StreakAlert (green), Error (red). ToastContext.showToast(type, message, durationMs?) adds to queue. Animate in (slide from right) and out (fade).",
+    "context": "Use CSS transitions, no animation library needed. Toast queue is an array in context state. Each toast has a unique id (Date.now() + random). When DailySummary loads for the first time today (GeneratedAt is today's date and was just fetched): show InsightsReady toast.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -rn 'showToast' client/src/contexts/ToastContext.tsx",
+      "grep -rn 'InsightsReady\\|PatternAlert\\|StreakAlert' client/src/contexts/ToastContext.tsx"
+    ],
+    "passes": false
+  },
+  {
+    "id": "3.5",
+    "category": "frontend",
+    "description": "Implement Day tab (/day route). Layout: (1) header with date + prev/next day arrows, (2) CalorieRing component (consumed/target, animated SVG), (3) MacroBars component (P/F/C progress bars), (4) MealList component (meal cards with edit/delete, sorted by LoggedAt), (5) DailyInsights section (skeleton while loading, insights list when ready, 'outdated' badge if IsStale), (6) persistent ProfileNudge banner if ProfileCompletedAt is null, (7) '+' FAB. Empty state for MealList: illustration + 'No meals logged yet. Tap + to add your first meal.'",
+    "context": "CalorieRing: SVG circle, fill animates from 0 to consumed/target ratio on mount. Over 100%: ring turns red. Fetch order: (1) GET /meals?date=today on mount, (2) GET /daily-summary?date=today (triggers generation if missing). Show InsightsReady toast when summary first loads. ProfileNudge: yellow banner, dismissible per session (sessionStorage), links to /profile.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -rn 'CalorieRing' client/src/components",
+      "grep -rn 'ProfileNudge\\|ProfileCompletedAt' client/src/pages/Day",
+      "grep -rn 'IsStale\\|isStale' client/src/pages/Day"
+    ],
+    "passes": false
+  },
+  {
+    "id": "4.1",
+    "category": "backend",
+    "description": "Add profile fields to User entity: WeightKg (decimal?), HeightCm (int?), Age (int?), Sex (enum: Male/Female/Other, nullable), DietType (enum: Standard/Vegetarian/Vegan/Keto/Other, nullable), FeedbackTone (enum: Neutral/Direct/Harsh, default Neutral), PreferredLanguage (string, default 'en'), ProfileCompletedAt (DateTime?). Implement GET /profile and PUT /profile. ProfileCompletedAt is set when WeightKg, HeightCm, Age, Sex are all non-null.",
+    "context": "Migration required. PUT /profile is a full replace of nullable fields (not merge). ProfileCompletedAt is managed server-side — client cannot set it directly. Add migration.",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'AddUserProfile'",
+      "dotnet test --filter 'Category=ProfileApi'",
+      "dotnet test --filter 'Profile_AllFieldsFilled_SetsProfileCompletedAt'",
+      "dotnet test --filter 'Profile_MissingField_DoesNotSetProfileCompletedAt'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "4.2",
+    "category": "backend",
+    "description": "Create UserGoal entity: Id, UserId, GoalType (enum: Cut/Maintain/Bulk), DailyCalorieTarget (int), ProteinTargetG (int?), FatTargetG (int?), CarbsTargetG (int?), ActiveSince (DateTime). One active goal per user (upsert on PUT). Implement GET /goals and PUT /goals. Wire DailyCalorieTarget into GET /daily-summary response (include targetCalories field).",
+    "context": "Migration required. PUT /goals creates goal if none exists or updates existing. Include goalType and dailyCalorieTarget in DailySummaryResponse so frontend can render the calorie ring target. No history of goals needed for MVP.",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'AddUserGoal'",
+      "dotnet test --filter 'Category=GoalsApi'",
+      "dotnet test --filter 'Goals_Upsert_ReplacesExistingGoal'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "4.3",
+    "category": "frontend",
+    "description": "Implement Profile tab (/profile route). Form sections: (1) Body stats: weight (number input, kg), height (number input, cm), age (number), sex (select). (2) Goal: goal type (radio: Cut/Maintain/Bulk), daily calorie target (number). (3) Macros (optional): protein/fat/carbs targets. (4) Preferences: diet type (select), feedback tone (radio), language (select: en/ru). Completion indicator: 'Profile X/7 fields complete' progress bar. Save button: PUT /profile + PUT /goals. Show success toast on save.",
+    "context": "Language change: save to localStorage key 'preferredLanguage' immediately on change (before save) so it can be used in API request headers. API header: Accept-Language: {language}. Completion count: WeightKg, HeightCm, Age, Sex, GoalType, DailyCalorieTarget, DietType = 7 fields.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -rn 'completion\\|ProfileCompletedAt\\|fields complete' client/src/pages/Profile",
+      "grep -rn 'Accept-Language\\|preferredLanguage' client/src/lib/axios.ts"
+    ],
+    "passes": false
+  },
+  {
+    "id": "4.4",
+    "category": "backend",
+    "description": "Add anonymous-mode branching to DailySummaryAgent and MealFeedbackAgent. When UserProfile.ProfileCompletedAt is null: use generic thresholds (2000kcal, 50g protein, 65g fat) and generic prompt without personalization. When profile complete: use actual profile values and goal targets in the prompt. The difference must be visible in prompt content.",
+    "context": "Add a helper ProfileContext class with static methods: GetCalorieTarget(UserGoal?), GetProteinTarget(UserGoal?), IsPersonalized(User). DailySummaryAgent prompt should include a clear section 'User Context' that differs between the two modes.",
+    "verification": [
+      "dotnet test --filter 'Category=AnonymousMode'",
+      "dotnet test --filter 'DailySummaryAgent_NoProfile_UsesGenericThresholds'",
+      "dotnet test --filter 'DailySummaryAgent_WithProfile_UsesPersonalizedTargets'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "5.1",
+    "category": "database",
+    "description": "Create WeeklyReport entity: Id, UserId, WeekStartDate (Monday, date only), Patterns (jsonb string[]), CalendarDayStatuses (jsonb: {date: string, status: 'green'|'yellow'|'red'}[]), GeneratedAt, IsStale (bool). Unique constraint on (UserId, WeekStartDate). Implement GET /weekly-report?weekStart=YYYY-MM-DD (returns 404 or triggers generation) and POST /weekly-report/invalidate?weekStart=.",
+    "context": "WeekStartDate is always Monday (validate server-side, return 400 for non-Monday dates). Calendar day statuses include only days with DailySummary data — not all 7 days are required. Migration required.",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'AddWeeklyReport'",
+      "dotnet test --filter 'Category=WeeklyReportEntity'",
+      "dotnet test --filter 'WeeklyReport_NonMondayDate_Returns400'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "5.2",
+    "category": "backend",
+    "description": "Implement WeeklyPatternAgent (Level 2, LLM). Input: List<DailySummary> for the week (up to 7) + UserProfile + UserGoal. Output: Patterns string[] + CalendarDayStatuses. Status logic: green = within 10% of DailyCalorieTarget; yellow = 10-25% over; red = >25% over. No goal: green <2000kcal, yellow 2000-2500kcal, red >2500kcal. Wire into GET /weekly-report with same lazy+lock pattern as DailySummaryAgent.",
+    "context": "Patterns should be behavioral observations, not just summaries of numbers ('You tend to overeat on weekends' not 'Saturday had 2800 calories'). Prompt should include the full week's DailySummary data and ask for 2-4 pattern strings. CalendarDayStatuses are computed in C# (not by LLM) before calling the agent.",
+    "verification": [
+      "dotnet test --filter 'Category=WeeklyPatternAgent'",
+      "dotnet test --filter 'CalendarStatus_Within10Percent_ReturnsGreen'",
+      "dotnet test --filter 'CalendarStatus_Over25Percent_ReturnsRed'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "5.3",
+    "category": "frontend",
+    "description": "Implement Week tab (/week route). Layout: (1) week navigation (prev/next week arrows, 'Week of MM/DD' label), (2) WeeklySummaryBars (total calories avg, macro averages vs targets), (3) PatternsList (lazy load with skeleton, shows WeeklyReport.Patterns), (4) CalendarGrid (7 columns Mon-Sun, cells colored by CalendarDayStatuses, tap to navigate to /day?date=YYYY-MM-DD), (5) empty state if less than 3 days of data this week. Show InsightsReady toast when weekly report first loads.",
+    "context": "CalendarGrid: each cell shows day letter (M/T/W/T/F/S/S) + day number + color background. Grey for days with no data. Tapping a colored cell navigates to Day view for that date. WeeklySummaryBars: show only if ≥1 day has data.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -rn 'CalendarGrid' client/src/components",
+      "grep -rn 'weekStart\\|WeekStart' client/src/pages/Week",
+      "grep -rn 'navigate.*day.*date' client/src/components/CalendarGrid"
+    ],
+    "passes": false
+  },
+  {
+    "id": "6.1",
+    "category": "database",
+    "description": "Create PatternEvent entity: Id, UserId, PatternKey (string), Type (enum: Positive/Warning), TriggeredAt (DateTime), Acknowledged (bool, default false), Message (string). Add index on (UserId, Acknowledged, TriggeredAt). Implement GET /pattern-events?limit=20 (unacknowledged first, then by TriggeredAt desc) and POST /pattern-events/{id}/acknowledge. Migration required.",
+    "context": "PatternKey is a string constant like 'weekend_overeating', 'deficit_streak_5', etc. This allows the agent to check if a specific pattern fired recently without querying by message text.",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'AddPatternEvent'",
+      "dotnet test --filter 'Category=PatternEventApi'",
+      "dotnet test --filter 'PatternEvents_UnacknowledgedFirst'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "6.2",
+    "category": "backend",
+    "description": "Implement PatternBreakerAgent with 9 built-in patterns. Agent runs after POST /meals and after DailySummary generation. For each pattern, check conditions against last 30 days of DailySummary data. Create PatternEvent if triggered. Rate-limit: same PatternKey cannot fire more than once per 3 days per user (check last PatternEvent with that key). Patterns: (Warning) weekend_overeating, late_night_calories, post_streak_crash, friday_risk, breakfast_skip_compensation. (Positive) deficit_streak_N (N=3,5,7), first_full_week, protein_streak_3, no_late_eating_habit.",
+    "context": "Weekend overeating: Sat+Sun average >120% of weekday average over last 2 weeks. Late night: >40% of today's calories logged after 19:00. Post-streak crash: 3+ day deficit streak broken by >130% calorie day. Friday risk: fired only on Fridays when user has history of Friday overeating. Breakfast skip: no meal before 10:00 on 3+ days this week. Deficit streak N: N consecutive days under calorie target. First full week: first ever 7-day streak. Protein streak: protein ≥target 3 days in a row. No late eating: no meals after 20:00 for 5 consecutive days (first time).",
+    "verification": [
+      "dotnet test --filter 'Category=PatternBreakerAgent'",
+      "dotnet test --filter 'Pattern_WeekendOvereating_Triggers'",
+      "dotnet test --filter 'Pattern_WeekendOvereating_RateLimit_DoesNotRetrigger'",
+      "dotnet test --filter 'Pattern_DeficitStreak_CreatesPositiveEvent'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "6.3",
+    "category": "backend",
+    "description": "Create UserHabit entity: Id, UserId, HabitDescription (string, max 200 chars), CreatedAt. Limit: max 10 habits per user. Implement POST /habits (201), GET /habits (array), DELETE /habits/{id} (204, own habits only). Pass habits as context in DailySummaryAgent and PatternBreakerAgent prompts: add 'User-reported habits: ...' section to prompts when habits exist.",
+    "context": "Migration required. Habits are free text entered by user. They give the LLM context about user's known behavioral patterns. Example: 'I tend to snack when stressed' or 'I usually skip lunch on Mondays'. Wire into agent prompts as a context block — not as instructions to the model.",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'AddUserHabit'",
+      "dotnet test --filter 'Category=HabitsApi'",
+      "dotnet test --filter 'DailySummaryAgent_WithHabits_IncludesHabitsInPrompt'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "6.4",
+    "category": "frontend",
+    "description": "Implement Pattern Breaker UI. (1) After POST /meals success: fetch GET /pattern-events?limit=5, show toast for any new (unacknowledged, TriggeredAt within last 10s) event. Warning events: yellow toast. Positive events: green toast. (2) In Analytics tab: 'Pattern Breaker' section with list of recent PatternEvents (icon by type, message, formatted date, 'Got it' acknowledge button). (3) In Profile tab: 'My Habits' section — list of habits with delete button, text input + 'Add' button (POST /habits).",
+    "context": "New event detection: compare TriggeredAt to Date.now() - 10000ms. On acknowledge: POST /pattern-events/{id}/acknowledge, then optimistically remove from unacknowledged list. Positive event icon: ✓ checkmark or star. Warning icon: ⚠ triangle.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -rn 'PatternEvent\\|pattern-events' client/src/pages/Analytics",
+      "grep -rn 'UserHabit\\|habits' client/src/pages/Profile",
+      "grep -rn 'acknowledge\\|Acknowledge' client/src/components/PatternEventCard"
+    ],
+    "passes": false
+  },
+  {
+    "id": "7.1",
+    "category": "backend",
+    "description": "Implement MonthlyStrategyAgent (Level 2, LLM). Input: List<WeeklyReport> (last 4) + UserProfile + UserGoal + ForecastResult. Output: StrategyAssessment {Insights string[3-5], Forecast {EstimatedWeightChangePer30Days decimal, DeficitConsistencyPercent decimal, MainBlocker string?}}. Endpoint: GET /monthly-report?month=YYYY-MM (lazy generation, same lock pattern). Store in MonthlyReport entity (Id, UserId, MonthStart, Assessment jsonb, GeneratedAt).",
+    "context": "Migration required for MonthlyReport. Month is always the 1st of the month. Agent prompt: include 4 weeks of pattern summaries + forecast numbers + profile/goals. Ask for strategic assessment, not week-by-week recap. Assessment should answer: 'Is this person on track? What is the #1 blocker? What should they change?'",
+    "verification": [
+      "dotnet ef migrations list --project DietDebugger.Infrastructure --startup-project DietDebugger.Api | grep -q 'AddMonthlyReport'",
+      "dotnet test --filter 'Category=MonthlyStrategyAgent'",
+      "dotnet test --filter 'MonthlyReport_Returns404_BeforeWeeklyData'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "7.2",
+    "category": "backend",
+    "description": "Implement ForecastService. Input: userId, last 30 days of DailySummary + UserGoal. Calculates: (1) average daily calorie delta (actual - target), (2) deficitConsistencyPercent (% of days under target), (3) estimatedWeightChangePer30Days (avgDailyDelta * 30 / 7700, rounded to 1 decimal). Expose via GET /forecast (returns ForecastResult). ForecastResult is also passed as context to MonthlyStrategyAgent.",
+    "context": "7700 kcal ≈ 1 kg of body fat. Negative delta = deficit = weight loss. If no goal: use 2000kcal as reference. If fewer than 7 days of data: return null forecast with message 'Not enough data yet (need 7+ days)'. ForecastService is pure C# math — no LLM.",
+    "verification": [
+      "dotnet test --filter 'Category=ForecastService'",
+      "dotnet test --filter 'Forecast_500CalDeficit30Days_Returns1Point9kg'",
+      "dotnet test --filter 'Forecast_Surplus_ReturnsPositiveNumber'",
+      "dotnet test --filter 'Forecast_LessThan7Days_ReturnsNull'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "7.3",
+    "category": "frontend",
+    "description": "Implement Analytics tab (/analytics route). Three sections: (1) Monthly Strategy — lazy-loaded, skeleton while generating, shows insights list + 'Generated at: [timestamp]' footer; (2) Forecast card — shows '±X kg/month at current pace', consistency %, main blocker if present; null state: 'Log at least 7 days to see your forecast'; (3) Pattern Breaker feed (reuse PatternEventList component from 6.4). Show InsightsReady toast when monthly report first generates.",
+    "context": "Fetch order: GET /forecast (fast, no LLM), GET /monthly-report?month=current (slow, triggers LLM). Show forecast card immediately even before monthly report loads. Forecast card: use green color if estimated change is in right direction vs goal (losing weight if goal=Cut), red if wrong direction.",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -rn 'ForecastCard\\|forecast' client/src/pages/Analytics",
+      "grep -rn 'MonthlyStrategy\\|monthly-report' client/src/pages/Analytics",
+      "grep -rn 'PatternEventList\\|pattern-events' client/src/pages/Analytics"
+    ],
+    "passes": false
+  },
+  {
+    "id": "8.1",
+    "category": "frontend",
+    "description": "Audit and implement all loading, error, and empty states. Required: (1) Skeleton loaders for DailyInsights, WeeklyPatterns, MonthlyStrategy, PatternEventList. (2) Error banners with retry button for: GET /meals, GET /daily-summary, GET /weekly-report, GET /monthly-report, POST /meals/analyze. (3) Empty states with CTA for: Day tab no meals, Week tab <3 days data, Analytics tab no pattern events. (4) First-launch full-screen ProfilePrompt (shown once if ProfileCompletedAt is null and no meals logged yet).",
+    "context": "Skeleton: grey animated pulse boxes matching the shape of the real content. Error banner: red bg, error message, 'Retry' button that re-fetches. Empty states: centered illustration (can be simple SVG icon) + heading + subtext + primary CTA button. ProfilePrompt: shown on /day if first visit (localStorage key 'hasLoggedMeal' not set), full-screen overlay, two CTAs: 'Set up profile' (→/profile) and 'Skip for now' (dismiss).",
+    "verification": [
+      "pnpm --dir client build",
+      "grep -rn 'Skeleton\\|skeleton' client/src/components | wc -l | awk '$1>=4'",
+      "grep -rn 'retry\\|Retry' client/src/components | wc -l | awk '$1>=3'",
+      "grep -rn 'EmptyState\\|empty-state' client/src/components | wc -l | awk '$1>=3'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "8.2",
+    "category": "backend",
+    "description": "Add input validation throughout. Backend: FluentValidation validators for all POST/PUT request DTOs. Return 400 with {errors: {field: string[]}} format. Key validations: register (email format, password min 8 chars with number), profile (weight 30-300kg, height 100-250cm, age 10-120), goals (calories 800-5000, macros 0-500g), habits (max 200 chars, max 10 per user), meals/analyze (file max 10MB, image/* mime type). Frontend: inline field errors on Profile form.",
+    "context": "Use AbstractValidator<T> pattern. Register validators in DI. Add a global exception filter that converts ValidationException to 400 response. Frontend error format: errors object keyed by camelCase field name, matching FluentValidation PropertyName.",
+    "verification": [
+      "dotnet test --filter 'Category=Validation'",
+      "dotnet test --filter 'Validation_InvalidEmail_Returns400'",
+      "dotnet test --filter 'Validation_WeightOutOfRange_Returns400'",
+      "curl -sf -X POST http://localhost:5000/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"bad\",\"password\":\"x\"}' | grep -q 'errors'"
+    ],
+    "passes": false
+  },
+  {
+    "id": "8.3",
+    "category": "backend",
+    "description": "Define IFileStorage interface in Application layer: Task<string> SaveTemporaryAsync(byte[] data, string extension, TimeSpan ttl). Task DeleteAsync(string key). Implement LocalFileStorage in Infrastructure: saves to configurable local path (FILE_STORAGE_PATH env var), auto-deletes files older than TTL via background cleanup job (runs every hour). Wire into meal analysis flow: save uploaded photo via IFileStorage, pass path to FoodVisionAgent, delete after job completes.",
+    "context": "All System.IO operations must be inside LocalFileStorage — no direct file access elsewhere. IFileStorage lives in Application.Interfaces. The key returned by SaveTemporaryAsync is an opaque string (filename/path abstraction). This ensures a future S3/Azure Blob implementation only requires adding a new Infrastructure class.",
+    "verification": [
+      "dotnet test --filter 'Category=FileStorage'",
+      "grep -rn 'System.IO\\|File.Write\\|File.Read' DietDebugger.Application | wc -l | grep -q '^0$'",
+      "grep -rn 'IFileStorage' DietDebugger.Application/Interfaces"
+    ],
+    "passes": false
+  },
+  {
+    "id": "8.4",
+    "category": "infra",
+    "description": "Create Docker deployment config. Files: /Dockerfile.api (multi-stage: build with .NET 8 SDK, run with aspnet runtime), /client/Dockerfile (build with Node 20, serve with nginx:alpine), /docker-compose.yml (services: api, db, client). Nginx config: serve React SPA, proxy /api/* to api:5000. Environment variables documented in .env.example: DB_CONNECTION_STRING, JWT_SECRET, AI_MODEL_PROVIDER, AI_API_KEY, FILE_STORAGE_PATH. README.md with local setup instructions (docker compose up, seed data note).",
+    "context": "docker-compose.yml: db service uses postgres:16-alpine with volume for persistence. api depends_on db. client serves on port 3000, proxies /api to api. Health check on api service. .env.example must NOT contain real secrets — only placeholder values like 'your-jwt-secret-here'.",
+    "verification": [
+      "docker compose build",
+      "docker compose up -d && sleep 10 && curl -sf http://localhost:3000 | grep -q 'Diet Debugger'",
+      "curl -sf http://localhost:3000/api/health | grep -q 'ok'",
+      "docker compose down"
+    ],
+    "passes": false
+  }
+]
