@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "bash",
+      "args": ["-c", "source ~/.secrets 2>/dev/null; source /Users/potapyich/dev/sources/projects/WebSocketEtlRaw/.envrc.local 2>/dev/null; exec /opt/homebrew/bin/npx -y @modelcontextprotocol/server-postgres \"$POSTGRES_CONNECTION_STRING\""]
+    },
+    "github": {
+      "command": "bash",
+      "args": ["-c", "source ~/.secrets 2>/dev/null; source /Users/potapyich/dev/sources/projects/WebSocketEtlRaw/.envrc.local 2>/dev/null; exec /usr/local/bin/docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN ghcr.io/github/github-mcp-server"]
+    }
+  }
+}
