@@ -1,0 +1,16 @@
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/bin/Debug/net10.0/DietDebugger.Application.deps.json
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/bin/Debug/net10.0/DietDebugger.Application.dll
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/bin/Debug/net10.0/DietDebugger.Application.pdb
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/bin/Debug/net10.0/DietDebugger.Domain.dll
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/bin/Debug/net10.0/DietDebugger.Domain.pdb
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebugger.Application.csproj.AssemblyReference.cache
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebugger.Application.GeneratedMSBuildEditorConfig.editorconfig
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebugger.Application.AssemblyInfoInputs.cache
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebugger.Application.AssemblyInfo.cs
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebugger.Application.csproj.CoreCompileInputs.cache
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebugger.Application.sourcelink.json
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebu.F00486AF.Up2Date
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebugger.Application.dll
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/refint/DietDebugger.Application.dll
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/DietDebugger.Application.pdb
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Application/obj/Debug/net10.0/ref/DietDebugger.Application.dll

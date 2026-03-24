@@ -1,0 +1,6 @@
+{
+  "DietDebugger.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/potapyich\/dev\/sources\/projects\/diet-debugger\/src\/DietDebugger.Api",
+  "DietDebugger.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/potapyich\/dev\/sources\/projects\/diet-debugger\/src\/DietDebugger.Application",
+  "DietDebugger.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/potapyich\/dev\/sources\/projects\/diet-debugger\/src\/DietDebugger.Domain",
+  "DietDebugger.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/potapyich\/dev\/sources\/projects\/diet-debugger\/src\/DietDebugger.Infrastructure"
+}

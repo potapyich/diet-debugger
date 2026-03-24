@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dietdebugger
+      POSTGRES_USER: dd
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dd}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dd -d dietdebugger"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_CONNECTION_STRING: "Host=db;Port=5432;Database=dietdebugger;Username=dd;Password=${DB_PASSWORD:-dd}"
+      JWT_SECRET: ${JWT_SECRET}
+      AI_MODEL_PROVIDER: ${AI_MODEL_PROVIDER:-openai}
+      AI_API_KEY: ${AI_API_KEY}
+      FILE_STORAGE_PATH: /data/uploads
+    volumes:
+      - uploads_data:/data/uploads
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  uploads_data:

@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DietDebugger.Api/DietDebugger.Api.csproj" />
+    <Project Path="src/DietDebugger.Application/DietDebugger.Application.csproj" />
+    <Project Path="src/DietDebugger.Domain/DietDebugger.Domain.csproj" />
+    <Project Path="src/DietDebugger.Infrastructure/DietDebugger.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DietDebugger.Tests/DietDebugger.Tests.csproj" />
+  </Folder>
+</Solution>

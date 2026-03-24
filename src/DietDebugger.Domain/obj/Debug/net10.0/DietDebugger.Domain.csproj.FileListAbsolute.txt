@@ -1,0 +1,12 @@
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/bin/Debug/net10.0/DietDebugger.Domain.deps.json
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/bin/Debug/net10.0/DietDebugger.Domain.dll
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/bin/Debug/net10.0/DietDebugger.Domain.pdb
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/DietDebugger.Domain.GeneratedMSBuildEditorConfig.editorconfig
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/DietDebugger.Domain.AssemblyInfoInputs.cache
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/DietDebugger.Domain.AssemblyInfo.cs
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/DietDebugger.Domain.csproj.CoreCompileInputs.cache
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/DietDebugger.Domain.sourcelink.json
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/DietDebugger.Domain.dll
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/refint/DietDebugger.Domain.dll
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/DietDebugger.Domain.pdb
+/Users/potapyich/dev/sources/projects/diet-debugger/src/DietDebugger.Domain/obj/Debug/net10.0/ref/DietDebugger.Domain.dll
